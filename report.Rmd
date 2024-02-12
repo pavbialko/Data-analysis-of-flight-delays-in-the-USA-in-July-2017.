@@ -1,0 +1,177 @@
+---
+title: "Linie lotnicze Projekt 2022"
+author: "Paweł Biełko"
+date: "25 04 2022"
+output: pdf_document
+---
+```{r,echo=FALSE, warning = FALSE, message = FALSE}
+library(odbc)
+
+con <- dbConnect(drv = odbc(),
+                 Driver = "ODBC Driver 17 for SQL Server",
+                 Server   = "mssql-2017.labs.wmi.amu.edu.pl",
+                 Database = "dbad_flights",
+                 UID      = "dbad_s473601",
+                 PWD      = "KYCLOigm8R",
+                 Port     = 1433)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\begin{center}
+Projekt nr 2 - Bazy danych - Linie lotnicze  
+\end{center}
+\begin{center}
+Projekt przedstawiający polecenia wraz z wygenerowanymi tabelami z analizy bazy danych dotyczących opóźnień połączeń lotniczych w USA w lipcu 2017 r.
+\end{center}
+
+***
+
+Zadanie 1   
+\begin{center}Jakie było średnie opóźnienie przylotu?\end{center}  
+```{sql connection=con}
+SELECT AVG(arr_delay_new) AS 'avg_delay' 
+FROM dbo.Flight_delays
+WHERE arr_delay_new IS NOT NULL;
+```  
+
+Zadanie 2  
+\begin{center}Jakie było maksymalne opóźnienie przylotu?\end{center} 
+```{sql connection=con}
+SELECT MAX(arr_delay_new) AS 'max_delay' 
+FROM dbo.Flight_delays
+WHERE arr_delay_new IS NOT NULL
+``` 
+
+Zadanie 3  
+\begin{center}Który lot miał największe opóźnienie przylotu?\end{center} 
+```{sql connection=con}
+SELECT  carrier,
+origin_city_name,
+dest_city_name,
+fl_date,
+arr_delay_new
+FROM dbo.Flight_delays
+WHERE arr_delay_new >= ALL(SELECT arr_delay_new 
+                           FROM dbo.Flight_delays
+                           WHERE arr_delay_new IS NOT NULL)
+```  
+
+Zadanie 4   
+\begin{center}Które dni tygodnia są najgorsze do podróżowania?\end{center} 
+```{sql connection=con}
+SELECT CASE WHEN day_of_week = 1 THEN 'Monday'
+			WHEN day_of_week = 2 THEN 'Tuesday'
+			WHEN day_of_week = 3 THEN 'Wednesday'
+			WHEN day_of_week = 4 THEN 'Thursday'
+			WHEN day_of_week = 5 THEN 'Friday'
+			WHEN day_of_week = 6 THEN 'Saturday'
+			WHEN day_of_week = 7 THEN 'Sunday'
+			END AS 'weekday_name',
+		AVG(arr_delay_new) AS 'avg_delay'
+FROM dbo.Flight_delays
+GROUP BY day_of_week
+ORDER BY AVG(arr_delay_new) DESC;
+```  
+
+Zadanie 5   
+\begin{center}Które linie lotnicze latające z San Francisco (SFO) mają najmniejsze opóźnienia przylotu?\end{center} 
+```{sql connection=con}
+SELECT  airline_name,AVG(arr_delay_new) AS avg_delay
+FROM Flight_delays f JOIN Airlines a ON f.airline_id = a.airline_id
+WHERE airline_name IN
+(SELECT a.airline_name
+FROM Flight_delays f JOIN Airlines a ON f.airline_id = a.airline_id
+WHERE f.origin = 'SFO')
+GROUP BY airline_name
+ORDER BY AVG(arr_delay_new) DESC
+```  
+
+Zadanie 6    
+\begin{center}Jaka część linii lotniczych ma regularne opóźnienia, tj. jej lot ma średnio co najmniej 10 min. opóźnienia?\end{center}
+```{sql connection=con}
+select(SELECT count(*)
+from(select count(*) AS 'delay' 
+FROM dbo.Flight_delays
+group by airline_id
+having avg(arr_delay_new)>10) as A)*1.0/(SELECT count(*)
+from(select count(*) AS 'delay' 
+FROM dbo.Flight_delays
+group by airline_id) as B) as late_proportion
+```  
+
+Zadanie 7    
+\begin{center}Jak opóźnienia wylotów wpływają na opóźnienia przylotów?\end{center}
+```{sql connection=con}
+Select(((select count(*) 
+from Flight_delays )*
+(select sum(isnull(arr_delay_new,0)*
+isnull(dep_delay_new,0)) 
+from Flight_delays))-
+((select sum(isnull(dep_delay_new,0)) 
+from Flight_delays)*
+(select sum(isnull(arr_delay_new,0)) 
+from Flight_delays)))/
+((sqrt((select count(*) 
+from Flight_delays )*
+(select sum(isnull(dep_delay_new,0)*
+isnull(dep_delay_new,0)) 
+from Flight_delays)-
+(select sum(isnull(dep_delay_new,0)) 
+from Flight_delays)*
+(select sum(isnull(dep_delay_new,0)) 
+from Flight_delays)))*
+(sqrt(((select count(*) 
+from Flight_delays )*
+(select sum(isnull(arr_delay_new,0)*
+isnull(arr_delay_new,0)) 
+from Flight_delays))-
+((select sum(isnull(arr_delay_new,0)) 
+from Flight_delays)*
+(select sum(isnull(arr_delay_new,0)) 
+from Flight_delays))))) as 'Pearsons r'
+``` 
+
+Zadanie 8   
+\begin{center}Która linia lotnicza miała największy wzrost (różnica) średniego opóźnienia przylotów w ostatnim tygodniu miesiąca, tj. między 1-23 a 24-31 lipca?\end{center}
+```{sql connection=con}
+SELECT TOP 1 A.airline_name,(avg_delay_1-avg_delay_2) AS [delay_increase]
+FROM Airlines A
+JOIN (SELECT airline_id, AVG(arr_delay_new) AS [avg_delay_2]
+FROM Flight_delays
+WHERE month=7 AND (day_of_month BETWEEN 1 AND 23)
+GROUP BY airline_id) F
+ON F.airline_id=A.airline_id
+JOIN (SELECT airline_id, AVG(arr_delay_new) AS [avg_delay_1]
+FROM Flight_delays
+WHERE month=7 AND (day_of_month BETWEEN 24 AND 31)
+GROUP BY airline_id) P
+ON P.airline_id=A.airline_id
+ORDER BY delay_increase DESC
+```  
+
+Zadanie 9    
+\begin{center}Które linie lotnicze latają zarówno na trasie SFO → PDX (Portland), jak i SFO → EUG (Eugene)?\end{center}
+```{sql connection=con}
+select P.airline_name from Flight_delays F 
+join Airlines P on P.airline_id=F.airline_id
+where origin='SFO' and dest='PDX'
+INTERSECT
+select P.airline_name from Flight_delays F 
+join Airlines P on P.airline_id=F.airline_id
+where origin='SFO' and dest='EUG'
+```  
+
+Zadanie 10   
+\begin{center}Jak najszybciej dostać się z Chicago do Stanfordu, zakładając wylot po 14:00 czasu lokalnego?\end{center}
+```{sql connection=con}
+select origin,dest,avg(arr_delay_new*1.0000000000)as avg_delay
+from Flight_delays
+where crs_dep_time>1400 
+and (origin='ORD' or origin='MDW')
+and (dest='SFO' or dest='OAK' or dest='SJC')
+group by origin, dest
+order by avg_delay DESC
+```  

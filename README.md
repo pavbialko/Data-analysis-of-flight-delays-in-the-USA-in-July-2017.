@@ -18,6 +18,6 @@ The project involves conducting data analysis on flight delays in the USA in Jul
 
 The report has been prepared using the R language and Markdown.
 For each of the points, appropriate SELECT commands have been prepared, which are then included in the R code.
-The resulting PDF report has been generated using Markdown. The PDF report includes:
+The resulting PDF report has been generated using Markdown in Polish language. The PDF report includes:
 - Formatted SQL queries
 - Generated answers.
